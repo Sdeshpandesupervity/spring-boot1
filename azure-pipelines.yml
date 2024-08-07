@@ -21,20 +21,11 @@ steps:
       sonar.projectKey=test
       sonar.projectName=test
 
-- task: Maven@3
+- task: DotNetCoreCLI@2
   inputs:
-    mavenPomFile: 'pom.xml'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    codeCoverageToolOption: 'JaCoCo'
-    javaHomeOption: 'JDKVersion'
-    jdkVersionOption: '1.8'
-    mavenVersionOption: 'Default'
-    mavenOptions: '-Xmx3072m'
-    mavenAuthenticateFeed: false
-    effectivePomSkip: false
-    sonarQubeRunAnalysis: true
-    sqMavenPluginVersionChoice: 'latest'
+    command: 'build'
+    projects: 'https://sonar.supervity.ai/projects'
+    arguments: 'test'
 - task: SonarQubePublish@6
   inputs:
     pollingTimeoutSec: '300'
