@@ -1,31 +1,71 @@
-# Maven
-# Build your Java project and run tests with Apache Maven.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/java
-
 trigger:
-- master
+- main
 
-pool:
-  vmImage: ubuntu-latest
+variables:
+  # Define variables for Trivy
+  TRIVY_REPORT: 'trivy-report.json'
+  
+  # Define variables for SonarQube
+  SONARQUBE_PROJECT_KEY: 'test'
+  SONARQUBE_PROJECT_NAME: 'test'
+  SONARQUBE_PROJECT_VERSION: '1.0'
+  SONARQUBE_ORGANIZATION: 'supervity.ai'
+  SONARQUBE_TOKEN: 'sqa_feac465d3e86c7f6cdf3f354fc21051a812714eb' # Securely store this in the pipeline's secret variables
+  
+stages:
+- stage: Scan
+  jobs:
+  - job: SonarQubeAndTrivy
+    displayName: 'SonarQube and Trivy Scanning'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: self
 
-steps:
-- task: SonarQubePrepare@6
-  inputs:
-    SonarQube: 'SonarQube'
-    scannerMode: 'Other'
-    extraProperties: |
-      # Additional properties that will be passed to the scanner,
-      # Put one key=value per line, example:
-      # sonar.exclusions=**/*.bin
-      sonar.projectKey=test
-      sonar.projectName=test
+    # Install Trivy
+    - script: |
+        sudo apt-get update -y
+        sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+        echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update -y
+        sudo apt-get install -y trivy
+      displayName: 'Install Trivy'
 
-- task: DotNetCoreCLI@2
-  inputs:
-    command: 'build'
-    projects: 'https://sonar.supervity.ai/projects'
-    arguments: 'test'
-- task: SonarQubePublish@6
-  inputs:
-    pollingTimeoutSec: '300'
+    # Run Trivy Scan
+    - script: |
+        trivy fs --exit-code 0 --format json --output $(TRIVY_REPORT) .
+      displayName: 'Run Trivy Scan'
+
+    # Upload Trivy Report (optional)
+    - publish: $(TRIVY_REPORT)
+      artifact: TrivyReport
+      displayName: 'Publish Trivy Report'
+
+    # Prepare analysis configuration for SonarQube
+    - task: SonarQubePrepare@5
+      inputs:
+        SonarQube: 'SonarQubeServiceConnection'
+        scannerMode: 'MSBuild'
+        projectKey: 'test'
+        projectName: 'test'
+        extraProperties: |
+          sonar.organization=$(SONARQUBE_ORGANIZATION)
+          sonar.login=$(SONARQUBE_TOKEN)
+    - task: SonarQubePrepare@6
+      inputs:
+        SonarQube: 'SonarQube'
+        scannerMode: 'MSBuild'
+        msBuildVersion: '7.1.1'
+        projectKey: 'test'
+        projectName: 'test'
+    
+    # Run SonarQube Analysis
+    - task: SonarQubeAnalyze@5
+      displayName: 'Run SonarQube Analysis'
+      
+    # Publish SonarQube Quality Gate result
+    - task: SonarQubePublish@5
+      inputs:
+        pollingTimeoutSec: '300'
+      displayName: 'Publish SonarQube Quality Gate Result'
